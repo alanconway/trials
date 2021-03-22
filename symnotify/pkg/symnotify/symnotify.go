@@ -54,10 +54,20 @@ func (w *Watcher) EventTimeout(timeout time.Duration) (e Event, err error) {
 		return Event{}, io.EOF
 	case e.Op == Create:
 		if info, err := os.Lstat(e.Name); err == nil {
-			w.addIfSymlink(info, e.Name)
+			if isSymlink(info) {
+				_ = w.watcher.Add(e.Name)
+			}
 		}
-	case e.Op == Remove && !w.added[e.Name]:
+	case e.Op == Remove:
 		w.watcher.Remove(e.Name)
+	case e.Op == Chmod:
+		if info, err := os.Lstat(e.Name); err == nil {
+			if isSymlink(info) {
+				// Symlink target may have changed.
+				_ = w.watcher.Remove(e.Name)
+				_ = w.watcher.Add(e.Name)
+			}
+		}
 	}
 	return e, err
 }
@@ -71,22 +81,13 @@ func (w *Watcher) Add(name string) error {
 
 	// Scan directories for existing symlinks, we wont' get a Create for those.
 	if infos, err := ioutil.ReadDir(name); err == nil {
-		for _, stat := range infos {
-			w.addIfSymlink(stat, filepath.Join(name, stat.Name()))
+		for _, info := range infos {
+			if isSymlink(info) {
+				_ = w.watcher.Add(filepath.Join(name, info.Name()))
+			}
 		}
 	}
 	return nil
-}
-
-// addIfSymlink adds name if info is a symlink.
-//
-// Ordinary files in a watched directory are watched automatically.
-// Symlinks are watched for create/destroy but the symlink itself never changes.
-// To get events for the target, we must directly watch the symlink name.
-func (w *Watcher) addIfSymlink(info os.FileInfo, name string) {
-	if info.Mode()&os.ModeSymlink == os.ModeSymlink {
-		_ = w.watcher.Add(name)
-	}
 }
 
 // Remove name from watcher
@@ -97,3 +98,7 @@ func (w *Watcher) Remove(name string) error {
 
 // Close watcher
 func (w *Watcher) Close() error { return w.watcher.Close() }
+
+func isSymlink(info os.FileInfo) bool {
+	return (info.Mode() & os.ModeSymlink) == os.ModeSymlink
+}
