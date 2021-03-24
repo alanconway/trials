@@ -53,29 +53,7 @@ func (w *Watcher) EventTimeout(timeout time.Duration) (e Event, err error) {
 	case !ok:
 		return Event{}, io.EOF
 	case e.Op == Create:
-		if info, err := os.Lstat(e.Name); err == nil {
-			if isSymlink(info) {
-				_ = w.watcher.Add(e.Name)
-			}
-		}
-	case e.Op == Remove:
-		w.watcher.Remove(e.Name)
-	case e.Op == Chmod:
-		if info, err := os.Lstat(e.Name); err == nil {
-			if isSymlink(info) {
-				// Symlink target may have changed.
-				_ = w.watcher.Remove(e.Name)
-				_ = w.watcher.Add(e.Name)
-			}
-		}
-	}
-	return e, err
-}
-
-// Add a file to the watcher
-func (w *Watcher) Add(name string) error {
-	if err := w.watcher.Add(name); err != nil {
-		return err
+		return Event{}, err
 	}
 	w.added[name] = true // Explicitly added, don't auto-Remove
 
